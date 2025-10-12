@@ -1,5 +1,9 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { type TechSection, type AIContent } from "@shared/schema";
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
 
 export interface CodeAnalysisResult {
   originalCode: string;
@@ -15,8 +19,11 @@ export interface CodeAnalysisResult {
   language: string;
 }
 
-// Initialize Google's Generative AI with the provided API key
-const genAI = new GoogleGenerativeAI("AIzaSyCuU-t6NeGnLhsU8P7FF_UHBzjeJPnPtoY");
+// Initialize Google's Generative AI with the API key from environment variables
+if (!process.env.GEMINI_API_KEY) {
+  throw new Error('GEMINI_API_KEY is not set in environment variables');
+}
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 export async function generateTechContent(section: TechSection): Promise<AIContent> {
   try {
