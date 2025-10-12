@@ -1,31 +1,43 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Loader2, Upload, GitBranch, FileText, AlertCircle, CheckCircle2, XCircle } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { 
+  Loader2, 
+  Upload, 
+  GitBranch, 
+  FileText, 
+  CheckCircle2, 
+  ShieldAlert, 
+  Clock, 
+  RefreshCw 
+} from 'lucide-react';
+import { 
+  Card, 
+  CardContent, 
+  CardDescription, 
+  CardHeader, 
+  CardTitle, 
+  CardFooter 
+} from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
-interface FileNode {
-  name: string;
-  path: string;
-  type: 'file' | 'directory';
-  children?: FileNode[];
-  content?: string;
-  issues?: Array<{
-    lineNumber: number;
-    issue: string;
-    severity: 'high' | 'medium' | 'low';
-    description: string;
-    fix: string;
-  }>;
+interface FileIssue {
+  lineNumber: number;
+  issue: string;
+  severity: 'high' | 'medium' | 'low';
+  description: string;
+  fix: string;
+}
+
+interface FileAnalysisResult {
+  filePath: string;
+  relativePath: string;
+  content: string;
+  issues: FileIssue[];
   fixedContent?: string;
   error?: string;
 }
@@ -39,20 +51,7 @@ interface RepoAnalysisResult {
     mediumSeverity: number;
     lowSeverity: number;
   };
-  files: Array<{
-    filePath: string;
-    relativePath: string;
-    content: string;
-    issues: Array<{
-      lineNumber: number;
-      issue: string;
-      severity: 'high' | 'medium' | 'low';
-      description: string;
-      fix: string;
-    }>;
-    fixedContent?: string;
-    error?: string;
-  }>;
+  files: FileAnalysisResult[];
   timestamp: string;
 }
 
@@ -61,177 +60,116 @@ export default function RepoScanner() {
   const [activeTab, setActiveTab] = useState<'scan' | 'files' | 'issues'>('scan');
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string>('');
-  const [fileTree, setFileTree] = useState<FileNode | null>(null);
   const [analysisResult, setAnalysisResult] = useState<RepoAnalysisResult | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
-  const [totalFiles, setTotalFiles] = useState(0);
   const [currentFile, setCurrentFile] = useState('');
-  const [showFixed, setShowFixed] = useState(false);
-  
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [scanComplete, setScanComplete] = useState(false);
+  const [scanStartTime, setScanStartTime] = useState<number | null>(null);
+  const [scanDuration, setScanDuration] = useState<number | null>(null);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: async (acceptedFiles: File[]) => {
-      // Handle file uploads
+      if (isScanning) return;
+      
       const formData = new FormData();
       acceptedFiles.forEach(file => {
         formData.append('files', file);
       });
       
       try {
+        setIsScanning(true);
+        setScanProgress(0);
+        setScanStartTime(Date.now());
+        
+        // Simulate progress
+        const progressInterval = setInterval(() => {
+          setScanProgress(prev => Math.min(prev + 10, 90));
+        }, 500);
+
         const response = await fetch('/api/analyze-files', {
           method: 'POST',
           body: formData,
         });
         
-        if (!response.ok) {
-          throw new Error('Failed to analyze files');
-        }
+        clearInterval(progressInterval);
+        setScanProgress(100);
         
-        const data = await response.json();
-        // Handle the analysis results
-        console.log('Analysis results:', data);
-        toast.success('Files analyzed successfully');
+        if (!response.ok) throw new Error('Failed to analyze files');
+        
+        const result = await response.json();
+        setAnalysisResult(result);
+        setScanComplete(true);
+        setScanDuration(Date.now() - (scanStartTime || Date.now()));
+        setActiveTab('files');
+        toast.success('Analysis completed successfully');
       } catch (error) {
         console.error('Error analyzing files:', error);
         toast.error('Failed to analyze files');
+      } finally {
+        setIsScanning(false);
       }
     },
-    multiple: true
+    multiple: true,
+    accept: {
+      'text/*': ['.js', '.jsx', '.ts', '.tsx', '.py', '.java', '.c', '.cpp', '.go', '.rb', '.php']
+    }
   });
 
-  const scanRepository = useCallback(async () => {
-    if (!repoUrl) {
+  const startAnalysis = async () => {
+    if (!repoUrl.trim()) {
       toast.error('Please enter a repository URL');
       return;
     }
 
     setIsScanning(true);
+    setScanComplete(false);
     setScanProgress(0);
     setAnalysisResult(null);
-    setFileTree(null);
-    setSelectedFile(null);
-    setFileContent('');
+    setScanStartTime(Date.now());
 
     try {
-      const response = await fetch('/api/scan-repository', {
+      // Simulate progress
+      const progressInterval = setInterval(() => {
+        setScanProgress(prev => Math.min(prev + 5, 90));
+      }, 500);
+
+      const response = await fetch('/api/analyze-repo', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ repoUrl }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to scan repository');
-      }
+      clearInterval(progressInterval);
+      setScanProgress(100);
 
-      const result: RepoAnalysisResult = await response.json();
+      if (!response.ok) throw new Error('Failed to analyze repository');
+
+      const result = await response.json();
       setAnalysisResult(result);
-      
-      // Build file tree
-      const tree = buildFileTree(result.files);
-      setFileTree(tree);
-      
-      toast.success(`Repository scanned successfully. Found ${result.summary.totalIssues} issues.`);
+      setScanComplete(true);
+      setScanDuration(Date.now() - (scanStartTime || Date.now()));
       setActiveTab('files');
+      toast.success('Repository analysis completed');
     } catch (error) {
-      console.error('Error scanning repository:', error);
-      toast.error(`Failed to scan repository: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Error analyzing repository:', error);
+      toast.error('Failed to analyze repository');
     } finally {
       setIsScanning(false);
-      setScanProgress(0);
     }
-  }, [repoUrl]);
-
-  const buildFileTree = (files: RepoAnalysisResult['files']): FileNode => {
-    const root: FileNode = { name: 'root', path: '', type: 'directory', children: [] };
-    
-    files.forEach(file => {
-      const parts = file.relativePath.split('/');
-      let current = root;
-      
-      for (let i = 0; i < parts.length; i++) {
-        const part = parts[i];
-        const isLast = i === parts.length - 1;
-        
-        if (isLast) {
-          current.children = current.children || [];
-          current.children.push({
-            name: part,
-            path: file.relativePath,
-            type: 'file',
-            content: file.content,
-            issues: file.issues,
-            fixedContent: file.fixedContent,
-            error: file.error
-          });
-        } else {
-          let child = (current.children || []).find(c => c.name === part);
-          
-          if (!child) {
-            child = {
-              name: part,
-              path: parts.slice(0, i + 1).join('/'),
-              type: 'directory',
-              children: []
-            };
-            current.children = [...(current.children || []), child];
-          }
-          
-          current = child;
-        }
-      }
-    });
-    
-    return root;
-  };
-
-  const renderFileTree = (node: FileNode, path: string = '') => {
-    if (node.type === 'file') {
-      const issues = node.issues || [];
-      const hasIssues = issues.length > 0;
-      const hasError = !!node.error;
-      
-      return (
-        <div 
-          key={node.path} 
-          className={`flex items-center py-1 px-2 rounded cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 ${selectedFile === node.path ? 'bg-blue-100 dark:bg-blue-900' : ''}`}
-          onClick={() => {
-            setSelectedFile(node.path);
-            setFileContent(showFixed && node.fixedContent ? node.fixedContent : node.content || '');
-          }}
-        >
-          <FileText className="h-4 w-4 mr-2 text-blue-500" />
-          <span className="truncate">{node.name}</span>
-          {hasIssues && (
-            <Badge variant="destructive" className="ml-2">
-              {issues.length} {issues.length === 1 ? 'issue' : 'issues'}
-            </Badge>
-          )}
-          {hasError && <AlertCircle className="h-4 w-4 ml-2 text-yellow-500" />}
-        </div>
-      );
-    }
-    
-    return (
-      <div key={path} className="mb-2">
-        <div className="font-medium text-sm text-gray-500 dark:text-gray-400 px-2 py-1">
-          {node.name || 'root'}
-        </div>
-        <div className="pl-4 border-l border-gray-200 dark:border-gray-700">
-          {node.children?.map(child => renderFileTree(child, `${path}/${child.name}`))}
-        </div>
-      </div>
-    );
   };
 
   const renderIssueBadge = (severity: 'high' | 'medium' | 'low') => {
+    const variantMap = {
+      high: 'destructive',
+      medium: 'secondary',
+      low: 'outline'
+    } as const;
+
     return (
       <Badge 
-        variant={severity === 'high' ? 'destructive' : severity === 'medium' ? 'warning' : 'outline'}
-        className="capitalize"
+        variant={variantMap[severity]}
+        className={`capitalize ${severity === 'medium' ? 'bg-yellow-500 hover:bg-yellow-600 text-white' : ''}`}
       >
         {severity}
       </Badge>
@@ -239,302 +177,345 @@ export default function RepoScanner() {
   };
 
   const renderFileContent = () => {
-    if (!selectedFile || !analysisResult) {
+    if (!analysisResult || !selectedFile) {
       return (
-        <div className="flex items-center justify-center h-full text-gray-500">
+        <div className="flex items-center justify-center h-full text-muted-foreground">
           Select a file to view its content
         </div>
       );
     }
-    
+
     const file = analysisResult.files.find(f => f.relativePath === selectedFile);
     if (!file) return null;
-    
-    const contentToShow = showFixed && file.fixedContent ? file.fixedContent : file.content;
-    const language = selectedFile.split('.').pop() || 'text';
-    
+
     return (
-      <div className="h-full flex flex-col">
-        <div className="flex justify-between items-center p-2 border-b">
-          <div className="text-sm font-mono">{selectedFile}</div>
-          <div className="flex space-x-2">
-            {file.fixedContent && (
-              <Button 
-                variant={showFixed ? 'default' : 'outline'} 
-                size="sm"
-                onClick={() => setShowFixed(!showFixed)}
-              >
-                {showFixed ? 'Show Original' : 'Show Fixed'}
-              </Button>
-            )}
-            <Button variant="outline" size="sm">
-              Download
-            </Button>
-          </div>
-        </div>
-        
-        <div className="flex-1 overflow-auto relative">
-          <SyntaxHighlighter 
-            language={language} 
-            style={vscDarkPlus} 
-            showLineNumbers
-            wrapLines
-            customStyle={{
-              margin: 0,
-              height: '100%',
-              borderRadius: 0,
-              backgroundColor: '#1e1e1e',
-              fontSize: '14px',
-              lineHeight: '1.5',
-              fontFamily: 'Fira Code, monospace'
-            }}
-            lineNumberStyle={{
-              color: '#858585',
-              paddingRight: '1em',
-              textAlign: 'right',
-              userSelect: 'none'
-            }}
-          >
-            {contentToShow || ''}
-          </SyntaxHighlighter>
-        </div>
+      <div className="h-full overflow-auto p-4">
+        <pre className="whitespace-pre-wrap text-sm">{file.content}</pre>
       </div>
     );
   };
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Repository Security Scanner</h1>
-        <p className="text-gray-600 dark:text-gray-400">
-          Scan your repository for security vulnerabilities and get automated fixes
-        </p>
-      </div>
-
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Scan a Repository</CardTitle>
-          <CardDescription>
-            Enter a Git repository URL to scan for security vulnerabilities and code quality issues
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex space-x-2">
-            <Input
-              type="text"
-              placeholder="https://github.com/username/repository.git"
-              value={repoUrl}
-              onChange={(e) => setRepoUrl(e.target.value)}
-              className="flex-1"
-              disabled={isScanning}
-            />
-            <Button 
-              onClick={scanRepository} 
-              disabled={isScanning || !repoUrl}
-              className="min-w-[120px]"
-            >
-              {isScanning ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Scanning...
-                </>
-              ) : (
-                'Scan Repository'
-              )}
-            </Button>
+    <div className="flex flex-col h-screen">
+      <header className="border-b">
+        <div className="container flex h-16 items-center px-4">
+          <div className="flex items-center space-x-4">
+            <GitBranch className="h-6 w-6" />
+            <h1 className="text-xl font-bold">Repository Scanner</h1>
           </div>
-          
-          {isScanning && (
-            <div className="mt-4">
-              <div className="h-2 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-blue-600 transition-all duration-300 ease-in-out"
-                  style={{ width: `${scanProgress}%` }}
-                />
-              </div>
-              <div className="text-sm text-gray-500 mt-1">
-                {scanProgress < 100 ? (
-                  <span>Analyzing {currentFile}...</span>
-                ) : (
-                  <span>Finalizing analysis...</span>
-                )}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        </div>
+      </header>
 
-      {analysisResult && (
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-4">
-            <TabsTrigger value="scan">Scan Summary</TabsTrigger>
-            <TabsTrigger value="files">Files</TabsTrigger>
-            <TabsTrigger value="issues">Issues ({analysisResult.summary.totalIssues})</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="scan" className="mt-0">
-            <Card>
+      <div className="flex-1 p-6">
+        {isScanning && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <Card className="w-full max-w-md">
               <CardHeader>
-                <CardTitle>Scan Summary</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                  Analyzing Repository
+                </CardTitle>
                 <CardDescription>
-                  Overview of the security scan results
+                  Scanning files for vulnerabilities...
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                  <Card className="bg-background">
-                    <CardHeader className="pb-2">
-                      <CardDescription>Total Files</CardDescription>
-                      <CardTitle className="text-3xl">{analysisResult.summary.totalFiles}</CardTitle>
-                    </CardHeader>
-                  </Card>
-                  <Card className="bg-background">
-                    <CardHeader className="pb-2">
-                      <CardDescription>Analyzed Files</CardDescription>
-                      <CardTitle className="text-3xl">{analysisResult.summary.analyzedFiles}</CardTitle>
-                    </CardHeader>
-                  </Card>
-                  <Card className="bg-background">
-                    <CardHeader className="pb-2">
-                      <CardDescription>Total Issues</CardDescription>
-                      <CardTitle className="text-3xl">{analysisResult.summary.totalIssues}</CardTitle>
-                    </CardHeader>
-                  </Card>
-                  <Card className="bg-background">
-                    <CardHeader className="pb-2">
-                      <CardDescription>Scan Time</CardDescription>
-                      <CardTitle className="text-lg">
-                        {new Date(analysisResult.timestamp).toLocaleString()}
-                      </CardTitle>
-                    </CardHeader>
-                  </Card>
-                </div>
-
                 <div className="space-y-4">
-                  <div>
-                    <h3 className="text-lg font-medium mb-2">Severity Breakdown</h3>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center">
-                          <div className="h-4 w-4 rounded-full bg-red-500 mr-2"></div>
-                          <span>High Severity</span>
-                        </div>
-                        <span className="font-medium">{analysisResult.summary.highSeverity}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center">
-                          <div className="h-4 w-4 rounded-full bg-yellow-500 mr-2"></div>
-                          <span>Medium Severity</span>
-                        </div>
-                        <span className="font-medium">{analysisResult.summary.mediumSeverity}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center">
-                          <div className="h-4 w-4 rounded-full bg-blue-500 mr-2"></div>
-                          <span>Low Severity</span>
-                        </div>
-                        <span className="font-medium">{analysisResult.summary.lowSeverity}</span>
-                      </div>
-                    </div>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <FileText className="h-4 w-4" />
+                    <span className="truncate flex-1">{currentFile || 'Preparing to scan...'}</span>
+                    <span>{scanProgress}%</span>
+                  </div>
+                  <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-primary transition-all duration-300 ease-in-out"
+                      style={{ width: `${scanProgress}%` }}
+                    />
                   </div>
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
+          </div>
+        )}
 
-          <TabsContent value="files" className="mt-0">
-            <div className="grid grid-cols-12 gap-4 h-[600px]">
-              <div className="col-span-3 border rounded-lg overflow-hidden">
-                <div className="p-3 border-b font-medium">Files</div>
-                <ScrollArea className="h-[calc(100%-50px)]">
-                  {fileTree && renderFileTree(fileTree)}
-                </ScrollArea>
-              </div>
-              <div className="col-span-9 border rounded-lg overflow-hidden">
-                {renderFileContent()}
-              </div>
-            </div>
-          </TabsContent>
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)} className="h-full flex flex-col">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="scan">Scan Repository</TabsTrigger>
+            <TabsTrigger value="files" disabled={!analysisResult}>Files</TabsTrigger>
+            <TabsTrigger value="issues" disabled={!analysisResult}>Issues</TabsTrigger>
+          </TabsList>
 
-          <TabsContent value="issues" className="mt-0">
-            <Card>
-              <CardHeader>
-                <CardTitle>Security Issues</CardTitle>
-                <CardDescription>
-                  {analysisResult.summary.totalIssues} issues found in {analysisResult.summary.analyzedFiles} files
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ScrollArea className="h-[500px] pr-4">
-                  {analysisResult.files.flatMap((file, fileIndex) => 
-                    file.issues?.map((issue, issueIndex) => (
-                      <div key={`${fileIndex}-${issueIndex}`} className="mb-6 last:mb-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <div className="flex items-center">
-                            <FileText className="h-4 w-4 mr-2 text-blue-500" />
-                            <span className="font-mono text-sm">{file.relativePath}</span>
-                            <span className="mx-2 text-gray-400">•</span>
-                            <span className="text-sm text-gray-500">Line {issue.lineNumber}</span>
-                          </div>
-                          {renderIssueBadge(issue.severity)}
-                        </div>
-                        <div className="ml-6">
-                          <h4 className="font-medium">{issue.issue}</h4>
-                          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                            {issue.description}
-                          </p>
-                          <div className="mt-2 p-3 bg-gray-100 dark:bg-gray-800 rounded text-sm font-mono whitespace-pre-wrap">
-                            {issue.fix}
-                          </div>
-                          <div className="mt-2 flex justify-end">
-                            <Button variant="outline" size="sm" className="mr-2">
-                              View File
-                            </Button>
-                            <Button variant="default" size="sm">
-                              Apply Fix
-                            </Button>
-                          </div>
-                        </div>
-                        <Separator className="my-4" />
+          <TabsContent value="scan" className="flex-1 flex flex-col items-center justify-center p-8">
+            {!scanComplete ? (
+              <div className="w-full max-w-2xl space-y-8">
+                <div
+                  {...getRootProps()}
+                  className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+                    isDragActive ? 'border-primary bg-primary/5' : 'border-muted-foreground/25 hover:border-primary/50'
+                  }`}
+                >
+                  <input {...getInputProps()} />
+                  <div className="space-y-4">
+                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+                      <Upload className="h-8 w-8 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-medium">Drag and drop files here</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Or click to browse files (Supports .js, .ts, .jsx, .tsx, .py, .java, .c, .cpp, .go, .rb, .php)
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <Input
+                    type="text"
+                    placeholder="Or enter repository URL (e.g., https://github.com/username/repo)"
+                    value={repoUrl}
+                    onChange={(e) => setRepoUrl(e.target.value)}
+                    className="pr-32"
+                    onKeyDown={(e) => e.key === 'Enter' && startAnalysis()}
+                  />
+                  <Button
+                    onClick={startAnalysis}
+                    disabled={isScanning || !repoUrl.trim()}
+                    className="absolute right-1 top-1/2 -translate-y-1/2"
+                  >
+                    {isScanning ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Scanning...
+                      </>
+                    ) : (
+                      'Scan Repository'
+                    )}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="w-full max-w-4xl space-y-6">
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle>Scan Results</CardTitle>
+                        <CardDescription>
+                          Analysis completed at {new Date().toLocaleString()}
+                        </CardDescription>
                       </div>
-                    ))
-                  )}
-                </ScrollArea>
-              </CardContent>
-            </Card>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => {
+                          setScanComplete(false);
+                          setRepoUrl('');
+                          setAnalysisResult(null);
+                        }}
+                      >
+                        New Scan
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {analysisResult && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="flex flex-col items-center p-4 bg-background rounded-lg border">
+                          <div className="flex items-center gap-2 text-lg font-medium">
+                            <FileText className="h-5 w-5 text-blue-500" />
+                            Files Scanned
+                          </div>
+                          <div className="text-3xl font-bold mt-2">
+                            {analysisResult.summary.analyzedFiles}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            out of {analysisResult.summary.totalFiles} total files
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col items-center p-4 bg-background rounded-lg border">
+                          <div className="flex items-center gap-2 text-lg font-medium">
+                            <ShieldAlert className="h-5 w-5 text-red-500" />
+                            Issues Found
+                          </div>
+                          <div className="text-3xl font-bold mt-2">
+                            {analysisResult.summary.totalIssues}
+                          </div>
+                          <div className="flex gap-4 text-sm">
+                            <span className="text-red-500">{analysisResult.summary.highSeverity} High</span>
+                            <span className="text-yellow-500">{analysisResult.summary.mediumSeverity} Medium</span>
+                            <span className="text-blue-500">{analysisResult.summary.lowSeverity} Low</span>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col items-center p-4 bg-background rounded-lg border">
+                          <div className="flex items-center gap-2 text-lg font-medium">
+                            <Clock className="h-5 w-5 text-purple-500" />
+                            Scan Duration
+                          </div>
+                          <div className="text-3xl font-bold mt-2">
+                            {scanDuration ? `${(scanDuration / 1000).toFixed(1)}s` : 'N/A'}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            Last scanned just now
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                  <CardFooter className="border-t px-6 py-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
+                      <Button 
+                        variant="outline" 
+                        className="h-24 flex flex-col items-center justify-center gap-2"
+                        onClick={() => setActiveTab('files')}
+                      >
+                        <FileText className="h-6 w-6" />
+                        <span>View All Files</span>
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        className="h-24 flex flex-col items-center justify-center gap-2"
+                        onClick={() => setActiveTab('issues')}
+                      >
+                        <ShieldAlert className="h-6 w-6 text-red-500" />
+                        <span>View All Issues</span>
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        className="h-24 flex flex-col items-center justify-center gap-2"
+                        onClick={startAnalysis}
+                      >
+                        <RefreshCw className="h-6 w-6" />
+                        <span>Rescan Repository</span>
+                      </Button>
+                    </div>
+                  </CardFooter>
+                </Card>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="files" className="mt-6">
+            {analysisResult ? (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <Card className="md:col-span-1">
+                  <CardHeader>
+                    <CardTitle>Files</CardTitle>
+                    <CardDescription>
+                      {analysisResult.summary.analyzedFiles} files analyzed
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2 max-h-[calc(100vh-300px)] overflow-y-auto">
+                      {analysisResult.files.map((file, index) => (
+                        <div
+                          key={index}
+                          className={`p-3 rounded-md cursor-pointer hover:bg-muted/50 ${
+                            selectedFile === file.relativePath ? 'bg-muted' : ''
+                          }`}
+                          onClick={() => {
+                            setSelectedFile(file.relativePath);
+                            setFileContent(file.content);
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 truncate">
+                              <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                              <span className="truncate text-sm">{file.relativePath}</span>
+                            </div>
+                            {file.issues?.length ? (
+                              <Badge variant="destructive" className="flex-shrink-0">
+                                {file.issues.length} {file.issues.length === 1 ? 'issue' : 'issues'}
+                              </Badge>
+                            ) : (
+                              <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="md:col-span-3">
+                  <CardHeader>
+                    <CardTitle>
+                      {selectedFile || 'Select a file to view content'}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="h-[calc(100vh-300px)] overflow-auto">
+                    {selectedFile ? (
+                      <pre className="whitespace-pre-wrap text-sm">
+                        {fileContent}
+                      </pre>
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-muted-foreground">
+                        Select a file to view its content
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle>No Scan Results</CardTitle>
+                  <CardDescription>
+                    Please run a scan to view files
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="issues" className="mt-6">
+            {analysisResult ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Security Issues</CardTitle>
+                  <CardDescription>
+                    {analysisResult.summary.totalIssues} issues found in{' '}
+                    {analysisResult.summary.analyzedFiles} files
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-6">
+                    {analysisResult.files.flatMap((file, fileIndex) =>
+                      file.issues?.map((issue, issueIndex) => (
+                        <div key={`${fileIndex}-${issueIndex}`} className="mb-6 last:mb-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                              {renderIssueBadge(issue.severity)}
+                              <span className="font-mono text-sm">
+                                {file.relativePath}:{issue.lineNumber}
+                              </span>
+                            </div>
+                          </div>
+                          <p className="text-sm text-muted-foreground mb-2">{issue.issue}</p>
+                          <div className="bg-muted/50 p-3 rounded-md text-sm">
+                            <h4 className="font-medium mb-1">Description:</h4>
+                            <p className="text-muted-foreground mb-2">{issue.description}</p>
+                            <h4 className="font-medium mb-1">Suggested Fix:</h4>
+                            <p className="text-muted-foreground">{issue.fix}</p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle>No Issues Found</CardTitle>
+                  <CardDescription>
+                    No security issues detected in the scanned files
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            )}
           </TabsContent>
         </Tabs>
-      )}
-
-      {!analysisResult && (
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle>Or Upload Files</CardTitle>
-            <CardDescription>
-              Drag and drop files here or click to browse
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div
-              {...getRootProps()}
-              className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
-                isDragActive ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-300 dark:border-gray-700'
-              }`}
-            >
-              <input {...getInputProps()} />
-              <div className="flex flex-col items-center justify-center space-y-2">
-                <Upload className="h-12 w-12 text-gray-400" />
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {isDragActive ? 'Drop the files here' : 'Drag and drop files here, or click to select files'}
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-500">
-                  Supports multiple files (max 10MB)
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      </div>
     </div>
   );
 }
