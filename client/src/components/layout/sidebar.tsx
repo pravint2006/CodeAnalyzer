@@ -4,14 +4,46 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faJava, faAndroid, faApple, faMicrosoft } from "@fortawesome/free-brands-svg-icons";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Code2, Bug, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 
 const sidebarItems = [
-  { name: "Java", path: "/tech/java", icon: faJava },
-  { name: "Android", path: "/tech/android", icon: faAndroid },
-  { name: "iOS", path: "/tech/ios", icon: faApple },
-  { name: ".NET", path: "/tech/dotnet", icon: faMicrosoft },
+  { 
+    name: "Code Analyzer", 
+    path: "/code-analyzer", 
+    icon: Code2,
+    iconType: "lucide" as const
+  },
+  { 
+    name: "Vulnerability Scanner", 
+    path: "/vulnerability-scanner", 
+    icon: ShieldCheck,
+    iconType: "lucide" as const
+  },
+  { 
+    name: "Java", 
+    path: "/tech/java", 
+    icon: faJava,
+    iconType: "font-awesome" as const
+  },
+  { 
+    name: "Android", 
+    path: "/tech/android", 
+    icon: faAndroid,
+    iconType: "font-awesome" as const
+  },
+  { 
+    name: "iOS", 
+    path: "/tech/ios", 
+    icon: faApple,
+    iconType: "font-awesome" as const
+  },
+  { 
+    name: ".NET", 
+    path: "/tech/dotnet", 
+    icon: faMicrosoft,
+    iconType: "font-awesome" as const
+  },
 ];
 
 export function Sidebar() {
@@ -45,7 +77,11 @@ export function Sidebar() {
                   location === item.path && "bg-secondary"
                 )}
               >
-                <FontAwesomeIcon icon={item.icon} className="h-4 w-4" />
+                {item.iconType === 'font-awesome' ? (
+                  <FontAwesomeIcon icon={item.icon} className="h-4 w-4" />
+                ) : (
+                  <item.icon className="h-4 w-4" />
+                )}
                 {expanded && item.name}
               </Button>
             </Link>
