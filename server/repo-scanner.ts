@@ -32,6 +32,11 @@ export interface RepoAnalysisResult {
   };
   files: FileAnalysisResult[];
   timestamp: string;
+  repoInfo?: {
+    languages: Record<string, number>;
+    projectType: string;
+    mainDirs: string[];
+  };
 }
 
 const SUPPORTED_EXTENSIONS = [
@@ -83,6 +88,38 @@ export async function scanRepository(repoPath: string): Promise<RepoAnalysisResu
   const files = await getAllFiles(repoPath);
   result.summary.totalFiles = files.length;
 
+  // --- New: Aggregate languages and main directories ---
+  const languageCounts: Record<string, number> = {};
+  const mainDirs: Set<string> = new Set();
+  let projectType = "Unknown";
+  let foundIndicators = [];
+
+  for (const file of files) {
+    const ext = path.extname(file).toLowerCase();
+    const lang = getLanguageFromExtension(ext);
+    if (lang !== 'text') {
+      languageCounts[lang] = (languageCounts[lang] || 0) + 1;
+    }
+    // Collect top-level dirs
+    const rel = path.relative(repoPath, file);
+    const parts = rel.split(path.sep);
+    if (parts.length > 1) mainDirs.add(parts[0]);
+    // Project type heuristics
+    if (rel === 'package.json') { projectType = 'Node.js'; foundIndicators.push('package.json'); }
+    if (rel === 'requirements.txt') { projectType = 'Python'; foundIndicators.push('requirements.txt'); }
+    if (rel === 'pom.xml') { projectType = 'Java (Maven)'; foundIndicators.push('pom.xml'); }
+    if (rel === 'build.gradle') { projectType = 'Java (Gradle)'; foundIndicators.push('build.gradle'); }
+    if (rel === 'go.mod') { projectType = 'Go'; foundIndicators.push('go.mod'); }
+    if (rel === 'composer.json') { projectType = 'PHP (Composer)'; foundIndicators.push('composer.json'); }
+    if (rel === 'Gemfile') { projectType = 'Ruby'; foundIndicators.push('Gemfile'); }
+    if (rel === 'Cargo.toml') { projectType = 'Rust'; foundIndicators.push('Cargo.toml'); }
+    if (rel === 'CMakeLists.txt') { projectType = 'C/C++ (CMake)'; foundIndicators.push('CMakeLists.txt'); }
+  }
+  // If multiple indicators found, join them
+  if (foundIndicators.length > 1) projectType += ` (${foundIndicators.join(', ')})`;
+
+  // --- End new ---
+
   // Analyze each file
   for (const file of files) {
     const relativePath = path.relative(repoPath, file);
@@ -127,6 +164,13 @@ export async function scanRepository(repoPath: string): Promise<RepoAnalysisResu
       });
     }
   }
+
+  // Add repoInfo to result
+  result.repoInfo = {
+    languages: languageCounts,
+    projectType,
+    mainDirs: Array.from(mainDirs)
+  };
 
   return result;
 }

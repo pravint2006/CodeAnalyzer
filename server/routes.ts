@@ -14,6 +14,8 @@ import { sections, type TechSection } from "@shared/schema";
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { promises as fs } from 'fs';
+import githubAuthRoutes from './github-auth';
+import githubFixRoutes from './github-fix-routes';
 
 export async function registerRoutes(app: Express) {
   app.get("/api/tech/:section", async (req, res) => {
@@ -151,7 +153,7 @@ export async function registerRoutes(app: Express) {
       // Clean up (in production, you might want to keep the repo for a while)
       await fs.rm(tempDir, { recursive: true, force: true });
       
-      res.json(scanResult);
+      res.json(scanResult); // scanResult now includes repoInfo
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       console.error('Error scanning for vulnerabilities:', error);
@@ -209,6 +211,10 @@ export async function registerRoutes(app: Express) {
       res.status(500).json({ message: `Failed to update vulnerability status: ${errorMessage}` });
     }
   });
+
+  // Register GitHub routes
+  app.use('/api/auth', githubAuthRoutes);
+  app.use('/api/github', githubFixRoutes);
 
   return createServer(app);
 }

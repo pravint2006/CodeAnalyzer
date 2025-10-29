@@ -516,6 +516,6 @@ export default function RepoScanner() {
           </TabsContent>
         </Tabs>
       </div>
-    </div>
+     </div>
   );
 }
