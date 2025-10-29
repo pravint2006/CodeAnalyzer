@@ -16,7 +16,7 @@ function Router() {
       <Route path="/tech/:section" component={TechSectionPage} />
       <Route path="/code-analyzer" component={CodeAnalyzer} />
       <Route path="/repo-scanner" component={RepoScanner} />
-      <Route path="/vulnerability-scanner" component={VulnerabilityScanner} />
+<Route path="/vulnerability-scanner" component={VulnerabilityScanner} />
       <Route component={NotFound} />
     </Switch>
   );
