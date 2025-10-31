@@ -31,13 +31,30 @@ export function AutoFixButton({ vulnerability, repoUrl, userId = 'default-user',
   const handlePreviewFix = async () => {
     setIsLoading(true);
     try {
+      console.log('Sending request to /api/github/preview-fix with:', { vulnerability });
       const response = await fetch('/api/github/preview-fix', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vulnerability }),
+        body: JSON.stringify({ 
+          vulnerability: {
+            ...vulnerability,
+            // Ensure we're only sending the necessary fields
+            type: vulnerability.type || 'XSS', // Default to XSS if type is not provided
+            file: vulnerability.file,
+            line: vulnerability.line,
+            codeSnippet: vulnerability.codeSnippet
+          } 
+        }),
       });
 
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error response from server:', errorText);
+        throw new Error(`Server responded with ${response.status}: ${errorText}`);
+      }
+
       const data = await response.json();
+      console.log('Received response from server:', data);
       
       if (data.canFix) {
         setFixPreview(data.fix);
@@ -45,8 +62,9 @@ export function AutoFixButton({ vulnerability, repoUrl, userId = 'default-user',
       } else {
         toast.error(data.message || 'No automatic fix available for this vulnerability');
       }
-    } catch (error) {
-      toast.error('Failed to preview fix');
+    } catch (error: any) {
+      console.error('Error in handlePreviewFix:', error);
+      toast.error(`Failed to preview fix: ${error.message}`);
     } finally {
       setIsLoading(false);
     }

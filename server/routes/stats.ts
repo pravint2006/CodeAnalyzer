@@ -1,33 +1,43 @@
 import { Router } from 'express';
 import { db } from '../db';
+import { sql } from 'drizzle-orm';
+import * as schema from '../shared/schema';
 
 const router = Router();
 
 router.get('/dashboard', async (req, res) => {
   try {
     // Get total number of scans
-    const [scanCount] = await db.query('SELECT COUNT(*) as count FROM scans');
-    
+    const scanCountRows = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(schema.scanResults);
+    const totalScans = scanCountRows[0]?.count ?? 0;
+
     // Get total number of issues found
-    const [issueCount] = await db.query(
-      `SELECT COUNT(*) as count FROM scan_results 
-       WHERE severity IN ('high', 'medium', 'low')`
-    );
-    
+    const issueCountRows = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(schema.scanResults)
+      .where(sql`severity IN ('high', 'medium', 'low')`);
+    const totalIssues = issueCountRows[0]?.count ?? 0;
+
     // Get number of fixed issues
-    const [fixedCount] = await db.query(
-      `SELECT COUNT(*) as count FROM scan_results 
-       WHERE status = 'fixed'`
-    );
-    
+    const fixedCountRows = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(schema.scanResults)
+      .where(sql`status = 'fixed'`);
+    const fixedIssues = fixedCountRows[0]?.count ?? 0;
+
     // Get number of connected repositories
-    const [repoCount] = await db.query('SELECT COUNT(DISTINCT repo_id) as count FROM repositories');
-    
+    const repoCountRows = await db
+      .select({ count: sql<number>`COUNT(DISTINCT repo_id)` })
+      .from(schema.repositories);
+    const totalRepos = repoCountRows[0]?.count ?? 0;
+
     res.json({
-      totalScans: scanCount[0].count,
-      totalIssues: issueCount[0].count,
-      fixedIssues: fixedCount[0].count,
-      totalRepos: repoCount[0].count
+      totalScans,
+      totalIssues,
+      fixedIssues,
+      totalRepos
     });
     
   } catch (error) {

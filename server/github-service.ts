@@ -1,4 +1,11 @@
 import { Octokit } from '@octokit/rest';
+import * as DOMPurifyModule from 'dompurify';
+import { JSDOM } from 'jsdom';
+
+// Initialize DOMPurify for Node.js environment
+const { window } = new JSDOM('', {});
+const DOMPurify = DOMPurifyModule.default;
+const domPurify = DOMPurifyModule.default(window);
 
 interface VulnerabilityFix {
   file: string;
@@ -6,6 +13,8 @@ interface VulnerabilityFix {
   originalCode: string;
   fixedCode: string;
   description: string;
+  requiresImport?: string;  // Optional: specifies required imports
+  importStatement?: string; // Optional: full import statement to add
 }
 
 interface GitHubRepo {
@@ -258,47 +267,136 @@ export class GitHubService {
 /**
  * Generate a fix for common vulnerability types
  */
+// Generate a fix for a given vulnerability
 export function generateFix(vulnerability: {
   type: string;
   file: string;
   line: number;
   codeSnippet: string;
 }): VulnerabilityFix | null {
+  console.log('\n=== generateFix called with ===');
+  console.log('Type:', vulnerability.type);
+  console.log('File:', vulnerability.file);
+  console.log('Line:', vulnerability.line);
+  console.log('Code Snippet:', vulnerability.codeSnippet);
+  console.log('===========================\n');
   const { type, file, line, codeSnippet } = vulnerability;
   const typeLower = type.toLowerCase();
-
-  // XSS vulnerability fix
-  if (typeLower.includes('xss') || typeLower.includes('cross-site scripting')) {
-    if (file.endsWith('.tsx') || file.endsWith('.jsx')) {
-      const fixedCode = codeSnippet.replace(
-        /dangerouslySetInnerHTML={{__html: (.+?)}}/g,
-        '{/* Use DOMPurify.sanitize($1) or proper escaping */}'
-      );
-      
-      return {
-        file,
-        line,
-        originalCode: codeSnippet,
-        fixedCode,
-        description: 'Fixed XSS vulnerability by removing dangerouslySetInnerHTML',
-      };
+  
+  // XSS vulnerability fix - check for various XSS-related terms
+  if (typeLower.includes('xss') || 
+      typeLower.includes('cross-site scripting') ||
+      type === 'XSS' ||
+      (typeLower.includes('injection') && typeLower.includes('html'))) {
+    
+    console.log('XSS vulnerability detected, processing...');
+    console.log('Original code snippet:', codeSnippet);
+    
+    // Handle empty or invalid code snippets
+    if (!codeSnippet || typeof codeSnippet !== 'string') {
+      console.error('Invalid code snippet provided');
+      return null;
     }
     
-    // HTML context XSS
-    if (file.endsWith('.html') || file.endsWith('.ejs') || file.endsWith('.pug')) {
-      const fixedCode = codeSnippet.replace(
+    // Normalize file extension check
+    const fileExt = file.split('.').pop()?.toLowerCase() || '';
+    const isJsFile = ['.tsx', '.jsx', '.js', '.ts'].includes(`.${fileExt}`);
+    const isTemplateFile = ['.html', '.ejs', '.pug', '.hbs'].includes(`.${fileExt}`);
+    const currentCodeSnippet = codeSnippet as string;
+    
+    // Handle React/JSX files
+    if (isJsFile) {
+      // Case 1: dangerouslySetInnerHTML with various formats
+      const dangerousInnerHTMLPatterns = [
+        // Standard format
+        /dangerouslySetInnerHTML\s*=\s*\{\s*__html:\s*([^}]+)\s*\}/g,
+        // With extra spaces
+        /dangerouslySetInnerHTML\s*=\s*\{\s*{\s*__html\s*:\s*([^}]+)\s*}\s*\}/g,
+        // With template literals
+        /dangerouslySetInnerHTML\s*=\s*\{\s*{\s*__html\s*:\s*`([^`]+)`\s*}\s*\}/g
+      ];
+
+      for (const pattern of dangerousInnerHTMLPatterns) {
+        if (pattern.test(currentCodeSnippet)) {
+          const fixedCode = currentCodeSnippet.replace(
+            pattern,
+            (match: string, content: string) => {
+              const sanitized = `{ __html: domPurify.sanitize(${content.trim()}) }`;
+              return `dangerouslySetInnerHTML={${sanitized}} // Sanitized with DOMPurify`;
+            }
+          );
+          
+          return {
+            file,
+            line,
+            originalCode: currentCodeSnippet,
+            fixedCode,
+            description: 'Fixed XSS vulnerability by adding DOMPurify sanitization to dangerouslySetInnerHTML',
+            requiresImport: 'dompurify',
+            importStatement: "import DOMPurify from 'dompurify';\nconst domPurify = DOMPurify(window);"
+          };
+        }
+      }
+      
+      // Case 2: Direct variable interpolation in JSX
+      if (codeSnippet.match(/<[^>]*>\s*{\s*[a-zA-Z0-9_$]+\s*}\s*<\//)) {
+        const fixedCode = codeSnippet.replace(
+          /(<[^>]*>)\s*{\s*([a-zA-Z0-9_$]+)\s*}\s*(<\/)/g,
+          '$1{DOMPurify.sanitize($2)}$3 // Added DOMPurify for XSS protection'
+        );
+        
+        return {
+          file,
+          line,
+          originalCode: codeSnippet,
+          fixedCode,
+          description: 'Fixed XSS vulnerability by adding DOMPurify sanitization to dynamic content',
+        };
+      }
+    }
+    
+    // HTML context XSS (for template files)
+    if (file.endsWith('.html') || file.endsWith('.ejs') || file.endsWith('.pug') || file.endsWith('.hbs')) {
+      // Handle different template syntaxes
+      let fixedCode = codeSnippet;
+      let description = 'Fixed XSS by adding HTML escaping';
+      
+      // EJS/Underscore templates
+      fixedCode = fixedCode.replace(
         /<%=\s*(.+?)\s*%>/g,
-        '<%- escapeHtml($1) %>'
+        '<%- escape($1) %>'
       );
       
-      return {
-        file,
-        line,
-        originalCode: codeSnippet,
-        fixedCode,
-        description: 'Fixed XSS by adding HTML escaping',
-      };
+      // Handle unescaped output in various template engines
+      fixedCode = fixedCode
+        .replace(/\{\{\{\s*(.+?)\s*\}\}\}/g, '{{escape($1)}}') // Handlebars
+        .replace(/\{\{\s*\|\s*raw\s*\|\s*\}\}/g, '') // Remove |raw filters
+        .replace(/\{\{\s*\|\s*safe\s*\|\s*\}\}/g, '') // Remove |safe filters
+        .replace(/\{\{\s*\|\s*e\s*\}\}/g, ''); // Remove |e (escape) filters
+      
+      // If we made changes, return the fixed code
+      if (fixedCode !== codeSnippet) {
+        return {
+          file,
+          line,
+          originalCode: codeSnippet,
+          fixedCode,
+          description,
+        };
+      }
     }
+    
+    // Generic XSS fix for any file type
+    console.log('Applying generic XSS fix...');
+    return {
+      file,
+      line,
+      originalCode: codeSnippet,
+      fixedCode: `// TODO: Manually review and fix potential XSS vulnerability
+// Consider using DOMPurify or similar library to sanitize user input
+${codeSnippet}`,
+      description: 'Added TODO comment for manual XSS fix review',
+    };
   }
 
   // SQL Injection fix

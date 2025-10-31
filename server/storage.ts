@@ -1,10 +1,22 @@
 import { type TechSection, type AIContent } from "@shared/schema";
+import { getTechContent as getMongoTechContent, saveTechContent as saveMongoTechContent } from "./db-mongo";
 
 export interface IStorage {
   getTechContent(section: TechSection): Promise<AIContent | undefined>;
   saveTechContent(section: TechSection, content: AIContent): Promise<void>;
 }
 
+export class MongoStorage implements IStorage {
+  async getTechContent(section: TechSection): Promise<AIContent | undefined> {
+    return await getMongoTechContent(section);
+  }
+
+  async saveTechContent(section: TechSection, content: AIContent): Promise<void> {
+    await saveMongoTechContent(section, content);
+  }
+}
+
+// Legacy in-memory storage (kept for backward compatibility)
 export class MemStorage implements IStorage {
   private content: Map<TechSection, AIContent>;
 
@@ -21,4 +33,5 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// Use MongoDB storage by default
+export const storage = new MongoStorage();

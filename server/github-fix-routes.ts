@@ -91,11 +91,22 @@ router.post('/create-fix-pr', async (req, res) => {
  */
 router.post('/preview-fix', async (req, res) => {
   try {
+    console.log('Received preview-fix request with body:', JSON.stringify(req.body, null, 2));
+    
     const { vulnerability } = req.body;
 
     if (!vulnerability) {
+      console.error('No vulnerability data provided');
       return res.status(400).json({ error: 'Missing vulnerability data' });
     }
+
+    console.log('Generating fix for vulnerability:', {
+      type: vulnerability.type,
+      title: vulnerability.title,
+      file: vulnerability.file,
+      line: vulnerability.line,
+      codeSnippet: vulnerability.codeSnippet
+    });
 
     const fix = generateFix({
       type: vulnerability.type || vulnerability.title,
